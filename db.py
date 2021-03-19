@@ -86,8 +86,4 @@ sqlite_insert_book_query = '''
                             VALUES ('Гарри Поттер и филосовский камень',Null,Null,Null)
                             '''
 
-do_with_db(sqlite_create_book_table_query)
-do_with_db(sqlite_create_chapter_table_query)
-do_with_db(sqlite_create_common_word_table_query)
-do_with_db(sqlite_create_word_chapter_table_query)
-do_with_db(sqlite_insert_book_query)
+#do_with_db()
