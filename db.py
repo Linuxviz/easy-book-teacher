@@ -1,4 +1,5 @@
 import sqlite3
+from main import words
 
 
 def do_with_db(query):
@@ -9,7 +10,7 @@ def do_with_db(query):
         cursor = sqlite_connection.cursor()
         print("База данных подключена к SQLite")
         # выполнение команды
-        cursor.execute(query)
+        cursor.executescript(query)
         # завершение транзакции, тоесть логическое отделение всех команд в блок который должен быть
         # выполнен с соблюдением ACID
         sqlite_connection.commit()
@@ -86,4 +87,46 @@ sqlite_insert_book_query = '''
                             VALUES ('Гарри Поттер и филосовский камень',Null,Null,Null)
                             '''
 
-#do_with_db()
+
+def sql_insert_word_command_str(origin, translate, frequency) -> str:
+    if translate == '':
+        translate = 'Null'
+    else:
+        translate = f'"{translate}"'
+    return f'''
+            INSERT INTO word(
+                        origin,
+                        translate,
+                        frequency,
+                        count_shows,
+                        correct_decisions,
+                        rang  
+            )
+            VALUES ("{origin}",{translate},{frequency},0,0,0);
+            '''
+
+
+def sql_insert_chapter_command_str(book, number_all_words, number_all_words_without_short, number_uniq_words,
+                                   name) -> str:
+    return f'''
+    INSERT INTO chapter(
+                        book,
+                        number_all_words,
+                        number_all_words_without_short,
+                        number_uniq_words,
+                        name
+                        )
+    VALUES ({book},{number_all_words},{number_all_words_without_short},{number_uniq_words},"{name}");   
+           '''
+
+
+def sql_insert_dict_words_command_str(words: dict, chapter_name: str, book_id: int) -> str:
+    sql_command_list = [sql_insert_chapter_command_str(book_id, 0, 0, 0, chapter_name)]
+    for word in words:
+        sql_command_list.append(sql_insert_word_command_str(word, words[word][1], words[word][0]))
+    return ''.join(sql_command_list)
+
+# query = sql_insert_chapter_command_str(1, 0, 0, 0, 'x')
+# query = sql_insert_dict_words_command_str(words)
+# print(query)
+# do_with_db(query)
