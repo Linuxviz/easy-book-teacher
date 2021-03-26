@@ -1,7 +1,7 @@
 /venv
 /.idea
-sqlite_python.db
-avidreaders.ru__harry-potter-and-the-sorcerer-s.txt
+sqlite_pars.db
+Book.txt
 Глава 1.txt
 Глава 2.txt
 Глава 3.txt
@@ -19,3 +19,4 @@ avidreaders.ru__harry-potter-and-the-sorcerer-s.txt
 Глава 15.txt
 Глава 16.txt
 Глава 17.txt
+ГП.txt
