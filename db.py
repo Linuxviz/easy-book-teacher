@@ -1,38 +1,94 @@
-import sqlite3
+import psycopg2
 
 
-def create_and_init_db():
+def db_connect():
+    # создание подключения
+    conn = psycopg2.connect(dbname='pars_base', user='db_user',
+                            password='1111', host='localhost')
+    return conn
+
+
+def do_with_db(query, conn):
+    print(query)
+    # создание элемента выполняющего инструкцию
+    cursor = conn.cursor()
+    # print("База данных подключена к SQLite")
+    # выполнение команды
+    cursor.execute(query)
+    # завершение транзакции, тоесть логическое отделение всех команд в блок который должен быть
+    # выполнен с соблюдением ACID
+    conn.commit()
+    # print("Запрос SQL выполнен")
+    cursor.close()
+
+
+def get_one_result_from_db(query, conn):
+    print(query)
+    res = 0
+    cursor = conn.cursor()
+    cursor.execute(query)
+    conn.commit()
+    res = cursor.fetchone()[0]
+    cursor.close()
+    return res
+
+
+def get_one_line_from_db(query, conn):
+    print(query)
+    res = 0
+    cursor = conn.cursor()
+    cursor.execute(query)
+    conn.commit()
+    res = cursor.fetchall()[0]
+    print('res', res)
+    cursor.close()
+    return res
+
+
+def get_query_set_from_db(query, conn) -> dict:
+    print(query)
+    res = {}
+    cursor = conn.cursor()
+    cursor.execute(query)
+    conn.commit()
+    temp = cursor.fetchall()
+    for raw in temp:
+        res[raw[1]] = raw[0]
+    cursor.close()
+    return res
+
+
+def create_and_init_db(conn):
     print('Инициализация таблиц')
     query = '''
                CREATE TABLE book (
-               book_id INTEGER PRIMARY KEY,
-               title TEXT,
+               book_id SERIAL PRIMARY KEY,
+               title VARCHAR(80) UNIQUE,
                number_all_words INTEGER,
                number_all_words_without_short INTEGER,
                number_uniq_words INTEGER
                );
                                     
                CREATE TABLE chapter (
-               chapter_id INTEGER PRIMARY KEY,
-               book INTEGER,
-               name TEXT, 
+               chapter_id SERIAL PRIMARY KEY,
+               book INTEGER REFERENCES book (book_id),
+               name VARCHAR(80) UNIQUE, 
                number_all_words INTEGER,
                number_all_words_without_short INTEGER,
-               number_uniq_words INTEGER,
-               FOREIGN KEY (book) REFERENCES book(book_id)
+               number_uniq_words INTEGER
                );
                                         
                CREATE TABLE common_word (
-               common_word_id INTEGER PRIMARY KEY,
-               origin TEXT,
-               translate TEXT,
+               common_word_id SERIAL PRIMARY KEY,
+               origin VARCHAR(80) UNIQUE,
+               translate VARCHAR(80) NULL,
                frequency INTEGER
                );
                
                CREATE TABLE word (
-               word_id INTEGER PRIMARY KEY,
-               origin TEXT,
-               translate TEXT,
+               word_id SERIAL PRIMARY KEY,
+               origin VARCHAR(80) UNIQUE,
+               translate VARCHAR(80) NULL,
                frequency INTEGER,
                count_shows INTEGER,
                correct_decisions REAL,
@@ -40,26 +96,22 @@ def create_and_init_db():
                );
 
                CREATE TABLE word_chapter (
-               word_chapter_id INTEGER PRIMARY KEY,
-               word INTEGER,
-               chapter INTEGER,
-               FOREIGN KEY (word) REFERENCES word(word_id),
-               FOREIGN KEY (chapter) REFERENCES chapter(chapter_id)
+               word_chapter_id SERIAL PRIMARY KEY,
+               word INTEGER REFERENCES word(word_id),
+               chapter INTEGER REFERENCES chapter(chapter_id)
                );
                
                CREATE TABLE common_word_chapter (
-               common_word_chapter_id INTEGER PRIMARY KEY,
-               common_word INTEGER,
-               chapter INTEGER,
-               FOREIGN KEY (common_word) REFERENCES word(common_word_id),
-               FOREIGN KEY (chapter) REFERENCES chapter(chapter_id)
+               common_word_chapter_id SERIAL PRIMARY KEY,
+               common_word INTEGER REFERENCES common_word(common_word_id),
+               chapter INTEGER REFERENCES chapter(chapter_id)
                );
             '''
-    do_with_db(query)
+    do_with_db(query, conn)
     print('___________________________________________________________________')
 
 
-def db_add_book(book_name):
+def db_add_book(book_name, conn):
     query = f'''
              INSERT INTO book(
                              title,
@@ -68,20 +120,20 @@ def db_add_book(book_name):
                              number_uniq_words)
              VALUES ('{book_name}', 0, 0, 0);
              '''
-    do_with_db(query)
+    do_with_db(query, conn)
 
 
-def db_get_book_id(book_name):
+def db_get_book_id(book_name, conn):
     query = f''' 
                  SELECT temp.book_id
                  FROM book AS temp
                  WHERE temp.title = '{book_name}';
             '''
-    res = get_one_result_from_db(query)
+    res = get_one_result_from_db(query, conn)
     return res
 
 
-def db_add_chapter(chapter_name, book_name, book_id):
+def db_add_chapter(chapter_name, book_name, book_id, conn):
     query = f'''INSERT INTO chapter(
                                     book,
                                     name,
@@ -91,158 +143,126 @@ def db_add_chapter(chapter_name, book_name, book_id):
                                     )
     VALUES ({book_id}, '{book_name}_{chapter_name}', 0, 0, 0);
     '''
-    do_with_db(query)
+    do_with_db(query, conn)
 
 
-def db_set_chapter_count_all_and_uniq_words(count_chapter_words, count_chapter_uniq_words, chapter_name, book_name):
+def db_set_chapter_count_all_and_uniq_words(count_chapter_words, count_chapter_uniq_words,
+                                            conn, count_n_w, chapter_id):
     query = f'''
                 UPDATE chapter 
                 SET number_all_words = {count_chapter_words},
-                    number_uniq_words = {count_chapter_uniq_words}
-                WHERE chapter.name = '{book_name}_{chapter_name}'; 
+                    number_uniq_words = {count_chapter_uniq_words},
+                    number_all_words_without_short = {count_n_w}
+                WHERE chapter_id = {chapter_id}; 
              '''
-    do_with_db(query)
+    do_with_db(query, conn)
 
 
-def db_get_count(table_name: str) -> int:
+def db_get_count(table_name: str, conn) -> int:
     query = f'''
                  SELECT COUNT({table_name}_id)
                  FROM {table_name};
             '''
-    return get_one_result_from_db(query)
+    return get_one_result_from_db(query, conn)
 
 
-def db_get_words(table_name: str, offset: int) -> set:
+def db_get_words(table_name: str, offset: int, conn) -> dict:
     query = f'''
-                     SELECT origin
+                     SELECT {table_name}_id, origin
                      FROM {table_name}
                      LIMIT 1001
                      OFFSET {offset};
                      '''
-    return get_query_set_from_db(query)
+    return get_query_set_from_db(query, conn)
 
 
-def db_add_words(words: dict, table):
+def db_add_words(words: dict, table, chapter_id, conn):
+    """Принимает на вход словарь слово - частота, и пытается вставить в таблицу, если
+    находит такое слово, обновляет частоту, если не находит возвращает слово и его id и частоту"""
+    print('Вставка слов:')
+    print('Слова:', words)
+    print('Имя таблицы:', table)
+    res_dict = {}
+    query = ''
+    additional_fields = ",count_shows,correct_decisions,rang"
+    additional_fields_filling = ", 0, 0.0, 0"
+    if table != 'word':
+        additional_fields = ""
+        additional_fields_filling = ""
+    for origin in words:
+        try:
+            query = f'''
+                        INSERT INTO {table} (origin,
+                                          translate,
+                                          frequency{additional_fields})
+                        VALUES ('{origin}', Null, {words[origin]}{additional_fields_filling})  
+                        ON CONFLICT (origin)
+                        DO UPDATE SET frequency = {table}.frequency + {words[origin]}
+                        RETURNING {table}.{table}_id, {table}.origin, {table}.translate;
+                     '''
+        except:
+            print(f'----------------ERROR----------------------------------->"{origin}", "{words[origin]}"')
+        temp = get_one_line_from_db(query, conn)
+        print('temp', temp[2])
+        if temp[2] is None:
+            res_dict[temp[1]] = temp[0]
+        query2 = f'''
+                    INSERT INTO {table}_chapter(
+                                                {table},
+                                                chapter
+                                                )
+                    VALUES ({temp[0]}, {chapter_id});
+                 '''
+        do_with_db(query2, conn)
+    return res_dict
+
+
+def db_update_translate(words: dict[int, str], table_name: str, conn):
     query = []
-    print(words)
-    if table == 'word':
-         for origin in words:
-             try:
-                 sql_query = f'''
-                             INSERT INTO word(
-                                              origin,
-                                              translate,
-                                              frequency,
-                                              count_shows,
-                                              correct_decisions,
-                                              rang 
-                                             )
-                            VALUES ("{origin}","{words[origin][1]}",{words[origin][0]}, 0, 0.0, 0);   
-                         '''
-                 query.append(sql_query)
-             except:
-                 print(f'----------------ERROR----------------------------------->"{origin}", "{words[origin]}"')
-         do_with_db(''.join(query))
+    if table_name == 'word':
+        for word in words:
+            sql_query = f'''
+                     UPDATE word
+                     SET translate = '{words[word][1]}'
+                     WHERE word.word_id = {words[word][0]};
+                     '''
+            query.append(sql_query)
     else:
-        for origin in words:
-            try:
-                sql_query = f'''
-                            INSERT INTO common_word(
-                                             origin,
-                                             translate,
-                                             frequency
-                                            )
-                           VALUES ("{origin}","{words[origin][1]}",{words[origin][0]});   
-                        '''
-                query.append(sql_query)
-            except:
-                print(f'----------------ERROR----------------------------------->"{origin}", "{words[origin]}"')
-        do_with_db(''.join(query))
+        for word in words:
+            sql_query = f'''
+                            UPDATE common_word
+                            SET translate = '{words[word][1]}'
+                            WHERE common_word.common_word_id = {words[word][0]};  
+                            '''
+            query.append(sql_query)
+    do_with_db(''.join(query), conn)
 
-def db_set_number_words_without_common_for_chapter(count_n_w, chapter_name, book_name):
+
+def db_get_chapter_id(book_name, chapter_name, conn):
     query = f'''
-               UPDATE chapter 
-               SET number_all_words_without_short = {count_n_w}
-               WHERE chapter.name = '{book_name}_{chapter_name}'; 
-            '''
-    do_with_db(query)
+            SELECT chapter_id
+            FROM chapter
+            WHERE chapter.name = '{book_name}_{chapter_name}'; 
+         '''
+    return get_one_result_from_db(query, conn)
 
 
-def do_with_db(query):
-    try:
-        # создание подключения
-        sqlite_connection = sqlite3.connect('sqlite_pars.db')
-        # создание элемента выполняющего инструкцию
-        cursor = sqlite_connection.cursor()
-        # print("База данных подключена к SQLite")
-        # выполнение команды
-        cursor.executescript(query)
-        # завершение транзакции, тоесть логическое отделение всех команд в блок который должен быть
-        # выполнен с соблюдением ACID
-        sqlite_connection.commit()
-        #print("Запрос SQL выполнен")
-        cursor.close()
-
-    except sqlite3.Error as error:
-        print("Ошибка при подключении к sqlite",query, error)
-
-    finally:
-        if sqlite_connection:
-            sqlite_connection.close()
-            # print("Соединение с SQLite закрыто")
-
-
-def get_one_result_from_db(query):
-    res = 0
-    try:
-        sqlite_connection = sqlite3.connect('sqlite_pars.db')
-        cursor = sqlite_connection.cursor()
-        #print("База данных подключена к SQLite")
-        cursor.execute(query)
-        sqlite_connection.commit()
-        #print("Запрос SQL выполнен, запрос одного значения")
-        res = cursor.fetchone()[0]
-        cursor.close()
-
-    except sqlite3.Error as error:
-        print("Ошибка при подключении к sqlite",query, error)
-
-    finally:
-        if (sqlite_connection):
-            sqlite_connection.close()
-            # print("Соединение с SQLite закрыто")
-    return res
-
-
-def get_query_set_from_db(query):
-    res = set()
-    try:
-        sqlite_connection = sqlite3.connect('sqlite_pars.db')
-        cursor = sqlite_connection.cursor()
-        # print("База данных подключена к SQLite")
-        cursor.execute(query)
-        sqlite_connection.commit()
-        #print("Запрос SQL выполнен, взятие пачки слов")
-        temp = cursor.fetchall()
-        for raw in temp:
-            res.add(raw[0])
-        cursor.close()
-
-    except sqlite3.Error as error:
-        print("Ошибка при подключении к sqlite, при множественном запросе",query, error)
-
-    finally:
-        if (sqlite_connection):
-            sqlite_connection.close()
-            # print("Соединение с SQLite закрыто")
-    print(res)
-    return res
-
-
-def db_update_frequency(word: str, frequency: int, table_name: str):
+def db_update_book(book, conn):
     query = f'''
-             UPDATE {table_name}
-             SET frequency = frequency + {frequency}
-             WHERE {table_name}.origin = "{word}";
+             WITH i(naw, nawws, nuq) AS 
+                                    (SELECT  
+                                            SUM(number_all_words) AS naw,
+                                            SUM(number_all_words_without_short) AS nawws,
+                                            SUM(number_uniq_words) AS nuq
+                                     FROM chapter
+                                     WHERE book = (SELECT book_id 
+                                                   FROM book
+                                                   WHERE title = '{book}'))
+             UPDATE book
+             SET number_all_words = book.number_all_words + i.naw,
+                 number_all_words_without_short = book.number_all_words_without_short + i.nawws,
+                 number_uniq_words = book.number_uniq_words + i.nuq
+             FROM i
+             WHERE title = '{book}';    
              '''
-    do_with_db(query)
+    do_with_db(query, conn)

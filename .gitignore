@@ -1,22 +1,5 @@
 /venv
 /.idea
-sqlite_pars.db
-Book.txt
-Глава 1.txt
-Глава 2.txt
-Глава 3.txt
-Глава 4.txt
-Глава 5.txt
-Глава 6.txt
-Глава 7.txt
-Глава 8.txt
-Глава 9.txt
-Глава 10.txt
-Глава 11.txt
-Глава 12.txt
-Глава 13.txt
-Глава 14.txt
-Глава 15.txt
-Глава 16.txt
-Глава 17.txt
-ГП.txt
+/book_src
+/en_ru_dict/src
+parseBook.prof

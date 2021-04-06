@@ -6,18 +6,27 @@ from googletrans import Translator
 
 
 def parse(file_path: str, book_new_name: str):
-    # сделать автоопределение имени книги
-    if not is_db_created():
-        create_and_init_db()
-    # сделать првоерку книги с таким именем
-    db_add_book(book_new_name)
-    book_id = db_get_book_id(book_new_name)
-    if not is_dir_created(book_new_name):
-        book_dir_path = create_dir(book_new_name)
-    else:
-        book_dir_path = f"./{book_new_name}"
-    parse_book(file_path, book_dir_path, book_new_name, book_id)
-    analyze_chapters(book_dir_path, book_new_name)
+    try:
+        conn = db_connect()
+        # сделать автоопределение имени книги
+        if not is_db_created():
+            create_and_init_db(conn)
+        # сделать првоерку книги с таким именем
+        db_add_book(book_new_name, conn)
+        book_id = db_get_book_id(book_new_name, conn)
+        if not is_dir_created(book_new_name):
+            book_dir_path = create_dir(book_new_name)
+        else:
+            book_dir_path = f"./{book_new_name}"
+        parse_book(file_path, book_dir_path, book_new_name, book_id, conn)
+        analyze_chapters(book_dir_path, book_new_name, conn)
+
+    except psycopg2.Error as error:
+        print("Ошибка при подключении к sqlite", error)
+
+    finally:
+        if conn:
+            conn.close()
 
 
 def is_db_created():
@@ -46,11 +55,12 @@ def create_dir(book_name) -> str:
     return f"./{book_name}"
 
 
-def parse_book(file_path: str, book_dir_path: str, book_name: str, book_id: int):
+def parse_book(file_path: str, book_dir_path: str, book_name: str, book_id: int, conn):
     """
     Разделяет файл по главам по закрывающему тегу секции
     и записывает полученные главы в отдельные файлы
     в директорию созданную для книги.
+    :param conn:
     :param book_id:
     :param file_path:
     :param book_dir_path:
@@ -68,28 +78,31 @@ def parse_book(file_path: str, book_dir_path: str, book_name: str, book_id: int)
                 with open(f'{book_dir_path}/{chapter_name}.txt', 'w', encoding='utf-8') as sec:
                     sec.write(''.join(buffer))
                 buffer = []
-                db_add_chapter(chapter_name, book_name, book_id)
+                db_add_chapter(chapter_name, book_name, book_id, conn)
             line = re.sub('<[^>]*>', '', line)
             buffer.append(line)
 
 
-def analyze_chapters(book_dir_path: str, book_name: str):
+def analyze_chapters(book_dir_path: str, book_name: str, conn):
     for root, dirs, files in os.walk(f"./{book_dir_path}"):
         for file in files:
             print(f'обработка {file}')
             chapter_name = Path(file).stem
             count_chapter_words, count_chapter_uniq_words, chapter_words = analyze_chapter(f"{book_dir_path}/{file}")
-            db_set_chapter_count_all_and_uniq_words(count_chapter_words, count_chapter_uniq_words, chapter_name,
-                                                    book_name)
             normal_words, common_words = decompose_words_into_groups(chapter_words)
             count_n_w = count_words_without_common(normal_words)
-            db_set_number_words_without_common_for_chapter(count_n_w, chapter_name, book_name)
+            chapter_id = db_get_chapter_id(book_name, chapter_name, conn)
+            db_set_chapter_count_all_and_uniq_words(count_chapter_words, count_chapter_uniq_words, conn, count_n_w,
+                                                    chapter_id)
             print('Начало обработки группы обычных слов главы:', file)
-            process_group_of_words(normal_words, 'word', chapter_name)
+            process_group_of_words(normal_words, 'word', chapter_id, conn)
+            print(normal_words)
             print('Конец обработки группы обычных слов главы:', file)
             print('Начало обработки группы частых слов главы:', file)
-            process_group_of_words(common_words, 'common_word', chapter_name)
+            process_group_of_words(common_words, 'common_word', chapter_id, conn)
+            print(common_words)
             print('Конец обработки группы частых слов главы:', file)
+    db_update_book(book_name, conn)
 
 
 def analyze_chapter(file: str) -> (int, int, dict):
@@ -121,21 +134,19 @@ def decompose_words_into_groups(chapter_words: dict) -> (dict, dict):
     return normal_words, common_words
 
 
-def process_group_of_words(words, table_name, chapter_name):
-    need_to_translate_words = {}
-    count_words_in_db = db_get_count(table_name)
-    for i in range(0, count_words_in_db + 1, 1000):
-        words_in_db = db_get_words(table_name, i)
-        for word in words.keys():
-            if word in words_in_db:
-                db_update_frequency(word, words[word], table_name)
-            else:
-                need_to_translate_words[word] = words[word]
+def process_group_of_words(words, table_name, chapter_id, conn):
+    # Принять словарь слово -> частота
+    # Внести в таблицу без конфликата(если есть то просто обновить частоты)
+    # Вернуть id origin translate, если translate пустой == Null или none? Занести на перевод
+    # Перевести
+    # Обновить перевод, частота уже внесена.
+    need_to_translate_words = db_add_words(words, table_name, chapter_id, conn)
     translated_words = translate(need_to_translate_words)
-    db_add_words(translated_words, table_name)
+    db_update_translate(translated_words, table_name, conn)
 
 
 def translate(words: dict) -> dict[str: (int, str)]:
+    print(words)
     """Принимает словарь с ключами в виде англ слов и значением - частотой употребления слов, возвращает
         словарь с теми же ключами но в качестве значений кортеж частота, автоперевод"""
     print("перевод слов")
@@ -153,7 +164,7 @@ def translate(words: dict) -> dict[str: (int, str)]:
         result = translator.translate(text=megastring, src='en', dest='ru')
         # Разделяем переведенные слова и чистим их от кавычек
         pars_result_text = re.split(r';', result.text.lower())
-        pars_result_text = [re.sub(r'["«»]', '', i) for i in pars_result_text]
+        pars_result_text = [re.sub(r'["«»]', '', i).strip() for i in pars_result_text]
         trans = dict(zip(group_words, pars_result_text))
         # заменяем значения на кортежи в исходном словаре
         for origin_word in trans:
