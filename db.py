@@ -63,7 +63,7 @@ def create_and_init_db(conn):
     query = '''
                CREATE TABLE book (
                book_id SERIAL PRIMARY KEY,
-               title VARCHAR(80) UNIQUE,
+               title VARCHAR(120) UNIQUE,
                number_all_words INTEGER,
                number_all_words_without_short INTEGER,
                number_uniq_words INTEGER
@@ -72,7 +72,7 @@ def create_and_init_db(conn):
                CREATE TABLE chapter (
                chapter_id SERIAL PRIMARY KEY,
                book INTEGER REFERENCES book (book_id),
-               name VARCHAR(80) UNIQUE, 
+               name VARCHAR(120) UNIQUE, 
                number_all_words INTEGER,
                number_all_words_without_short INTEGER,
                number_uniq_words INTEGER
@@ -80,15 +80,15 @@ def create_and_init_db(conn):
                                         
                CREATE TABLE common_word (
                common_word_id SERIAL PRIMARY KEY,
-               origin VARCHAR(80) UNIQUE,
-               translate VARCHAR(80) NULL,
+               origin VARCHAR(120) UNIQUE,
+               translate VARCHAR(120) NULL,
                frequency INTEGER
                );
                
                CREATE TABLE word (
                word_id SERIAL PRIMARY KEY,
-               origin VARCHAR(80) UNIQUE,
-               translate VARCHAR(80) NULL,
+               origin VARCHAR(120) UNIQUE,
+               translate VARCHAR(120) NULL,
                frequency INTEGER,
                count_shows INTEGER,
                correct_decisions REAL,
